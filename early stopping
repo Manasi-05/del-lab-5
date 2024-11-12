@@ -1,0 +1,79 @@
+#early stopping
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.datasets import load_iris
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from keras.models import Model
+from keras.layers import Dense, Input, Dropout
+from keras.optimizers import Adam
+from keras.callbacks import EarlyStopping
+from keras.utils import to_categorical
+
+# Step 1: Load and preprocess the Iris dataset
+iris = load_iris()
+X = iris.data
+y = iris.target
+
+# One-hot encode the target labels for classification task
+y_class = to_categorical(y, num_classes=3)
+
+# For multi-task learning, let's also predict the 'petal length' (a regression task)
+y_regression = X[:, 2]  # Petal length is the third feature in the dataset
+
+# Split the dataset into training and validation sets (70% train, 30% validation)
+X_train, X_val, y_class_train, y_class_val, y_regression_train, y_regression_val = train_test_split(
+    X, y_class, y_regression, test_size=0.3, random_state=42)
+
+# Normalize the features
+scaler = StandardScaler()
+X_train = scaler.fit_transform(X_train)
+X_val = scaler.transform(X_val)
+
+# Step 2: Build the multi-task model
+input_layer = Input(shape=(X_train.shape[1],))
+
+# Shared hidden layers
+x = Dense(64, activation='relu')(input_layer)
+x = Dropout(0.3)(x)
+x = Dense(32, activation='relu')(x)
+
+# Task 1: Classification output
+class_output = Dense(3, activation='softmax', name='class_output')(x)
+
+# Task 2: Regression output
+reg_output = Dense(1, activation='linear', name='reg_output')(x)
+
+# Define the model with multiple outputs
+model = Model(inputs=input_layer, outputs=[class_output, reg_output])
+
+# Step 3: Compile the model
+model.compile(optimizer=Adam(),
+              loss={'class_output': 'categorical_crossentropy', 'reg_output': 'mse'},
+              metrics={'class_output': 'accuracy', 'reg_output': 'mae'})
+
+# Step 4: Early stopping callback
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+
+# Step 5: Train the model with early stopping
+history = model.fit(X_train,
+                    {'class_output': y_class_train, 'reg_output': y_regression_train},
+                    epochs=100,
+                    batch_size=10,
+                    validation_data=(X_val, {'class_output': y_class_val, 'reg_output': y_regression_val}),
+                    callbacks=[early_stopping])
+
+# Step 6: Plot training and validation loss
+plt.figure(figsize=(12, 6))
+
+# Plot for classification loss
+plt.subplot(1, 2, 1)
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
+plt.title('Total Loss (Classification + Regression)')
+plt.xlabel('Epochs')
+plt.ylabel('Loss')
+plt.legend()
+
+plt.tight_layout()
+plt.show()
